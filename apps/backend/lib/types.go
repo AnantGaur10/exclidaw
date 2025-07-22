@@ -1,0 +1,187 @@
+package lib
+
+import (
+	"time"
+
+	"github.com/google/uuid"
+	"gorm.io/datatypes"
+)
+
+type Role string
+
+const (
+	Creator Role = "Creator"
+	Admin   Role = "Admin"
+	Member  Role = "Member"
+)
+
+type MessageType string
+
+const (
+	MessageTypeJoin        MessageType = "join"
+	MessageTypeChat        MessageType = "chat"
+	MessageTypePing        MessageType = "ping"
+	MessageTypePong        MessageType = "pong"
+	MessageTypeStatus      MessageType = "status"
+	MessageTypeLeave       MessageType = "leave"
+	MessageTypeDraw        MessageType = "draw"
+	MessageTypeUndo        MessageType = "undo"
+	MessageTypePencilChunk MessageType = "pencil_chunk"
+)
+
+type IncomingSignupPayload struct {
+	Email    string `json:"email" validate:"required,email"`
+	UserName string `json:"username" validate:"required,min=5,max=20"`
+	Password string `json:"password" validate:"required,min=6,max=100"`
+}
+
+type IncomignSigninPayload struct {
+	Email    string `json:"email" validate:"required,email"`
+	Password string `json:"password" validate:"required,min=6,max=100"`
+}
+
+type IncomingRoomPayload struct {
+	Name        string `json:"Name" validate:"required,min=5,max=30"`
+	Description string `json:"Description" validate:"required,min=10,max=100"`
+	IsPrivate   bool   `json:"IsPrivate" validate:"boolean_required"`
+}
+
+type IncomingRoomJoinPayload struct {
+	UserName string    `json:"UserName" validate:"required"`
+	RoomID   uuid.UUID `json:"RoomID" validate:"required,uuid"`
+}
+
+type IncomingRoomNamePayload struct {
+	RoomName string `json:"RoomName" validate:"required",min=5,max=30`
+}
+
+type ReturnRoomsFormat struct {
+	RoomName string    `json:"RoomName"`
+	RoomID   uuid.UUID `json:"RoomID"`
+	UserName string    `json:"UserName"`
+}
+
+type SenderInfo struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+type ContentInfo struct {
+	Message string `json:"Message"`
+}
+
+type ReturnMessageFormat struct {
+	Type      string      `json:"Type"`
+	Timestamp time.Time   `json:"timestamp"`
+	Sender    SenderInfo  `json:"sender"`
+	Content   ContentInfo `json:"content"`
+}
+
+type User struct {
+	ID        uuid.UUID `json:"id" gorm:"primaryKey;type:uuid;default:gen_random_uuid()"`
+	Email     string    `json:"email" gorm:"unqiue"`
+	UserName  string    `json:"username" gorm:"unqiue"`
+	Password  string    `json:"-"`
+	CreatedAt time.Time `json:"createdAt" gorm:"autoCreateTime;column:created_at"`
+	UpdatedAt time.Time `json:"updatedAt" gorm:"autoUpdateTime;column:updated_at"`
+
+	CreatedRooms []Room    `json:"createdRooms" gorm:"foreignKey:CreatorID"`
+	Messages     []Message `json:"messages" gorm:"foreignKey:UserID"`
+	Rooms        []Room    `json:"rooms" gorm:"many2many:user_rooms;"` // Many-to-many relationship
+}
+
+type Room struct {
+	ID uuid.UUID `json:"id" gorm:"primaryKey;type:uuid;default:gen_random_uuid()"`
+
+	Name        string    `json:"name" gorm:"not null"`
+	Description string    `json:"description"`
+	CreatorID   uuid.UUID `json:"creatorId" gorm:"type:uuid;not null"`
+	IsPrivate   bool      `json:"isPrivate" gorm:"default:false"`
+
+	CreatedAt time.Time `json:"createdAt" gorm:"autoCreateTime;column:created_at"`
+	UpdatedAt time.Time `json:"updatedAt" gorm:"autoUpdateTime;column:updated_at"`
+
+	// Relationships
+	Creator  User      `json:"creator" gorm:"foreignKey:CreatorID"`
+	Messages []Message `json:"messages" gorm:"foreignKey:RoomID"`
+	Users    []User    `json:"users" gorm:"many2many:user_rooms;"` // Many-to-many relationship
+}
+
+type Message struct {
+	ID        uint        `json:"id" gorm:"primaryKey;autoIncrement"`
+	Type      MessageType `json:"type" gorm:"not null"`
+	Content   string      `json:"content" gorm:"not null"`
+	UserID    uuid.UUID   `json:"userId" gorm:"type:uuid;not null"`
+	RoomID    uuid.UUID   `json:"roomId" gorm:"type:uuid;not null"`
+	CreatedAt time.Time   `json:"createdAt" gorm:"autoCreateTime;column:created_at"`
+	UpdatedAt time.Time   `json:"updatedAt" gorm:"autoUpdateTime;column:updated_at"`
+
+	// Relationships
+	User User `json:"user" gorm:"foreignKey:UserID"`
+	Room Room `json:"room" gorm:"foreignKey:RoomID"`
+}
+
+// ShapeType defines the types of shapes we can have.
+type ShapeType string
+
+const (
+	ShapeLine      ShapeType = "line"
+	ShapeRectangle ShapeType = "rectangle"
+	ShapePencil    ShapeType = "pencil"
+	ShapeCircle    ShapeType = "circle"
+)
+
+type IncomingShape struct {
+	ID          string    `json:"id"`
+	IsComplete  bool      `json:"isComplete"`
+	StrokeWidth uint      `json:"strokeWidth"`
+	Type        ShapeType `json:"type"`
+	X           int       `json:"x"`
+	Y           int       `json:"y"`
+	Points      [][]int   `json:"points"`
+	Color       string    `json:"color"`
+	Radius      float64   `json:"radius"`
+	Height      int       `json:"height"`
+	Width       int       `json:"width"`
+	EndX        int       `json:"endX"`
+	EndY        int       `json:"endY"`
+}
+
+// This is the primary model for storing drawing elements.
+type Shape struct {
+	// The ID is now parsed from the client-sent UUID, not auto-generated by the DB.
+	ID uuid.UUID `json:"id" gorm:"primaryKey;type:uuid"`
+	// ... rest of the fields
+// highlight-end
+	RoomID    uuid.UUID `json:"roomId" gorm:"type:uuid;not null;index"` // Which canvas it belongs to
+	CreatorID uuid.UUID `json:"creatorId" gorm:"type:uuid;not null"`    // Who drew it
+
+	Type ShapeType `json:"type" gorm:"type:varchar(20);not null"`
+	X    float64   `json:"x" gorm:"not null"`
+	Y    float64   `json:"y" gorm:"not null"`
+
+	Width       float64        `json:"width,omitempty"`
+	Height      float64        `json:"height,omitempty"`
+	Radius      float64        `json:"radius,omitempty"`
+	EndX        float64        `json:"endX,omitempty"`
+	EndY        float64        `json:"endY,omitempty"`
+	Points      datatypes.JSON `json:"points,omitempty"`
+	Color       string         `json:"color" gorm:"type:varchar(7);default:'#000000'"`
+	StrokeWidth float64        `json:"strokeWidth" gorm:"default:2"`
+	CreatedAt   time.Time      `json:"createdAt" gorm:"autoCreateTime"`
+	UpdatedAt   time.Time      `json:"updatedAt" gorm:"autoUpdateTime"`
+	Room        Room           `json:"-" gorm:"foreignKey:RoomID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;"`
+	Creator     User           `json:"-" gorm:"foreignKey:CreatorID;constraint:OnUpdate:CASCADE,OnDelete:SET NULL;"`
+}
+
+// UserRoom - junction table for many-to-many relationship (optional explicit definition)
+type UserRoom struct {
+	UserID   uuid.UUID `json:"userId" gorm:"type:uuid;primaryKey"`
+	RoomID   uuid.UUID `json:"roomId" gorm:"type:uuid;primaryKey"`
+	JoinedAt time.Time `json:"joinedAt" gorm:"autoCreateTime;column:joined_at"`
+	Role     string    `json:"role" gorm:"default:'member'"` // member, admin, moderator
+
+	// Relationships
+	User User `json:"user" gorm:"foreignKey:UserID"`
+	Room Room `json:"room" gorm:"foreignKey:RoomID"`
+}

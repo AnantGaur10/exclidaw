@@ -1,0 +1,12 @@
+# Ignore Go backend apps
+/apps/backend
+
+# Ignore Go binaries
+**/*.go
+**/bin/
+
+# Ignore local dev junk
+node_modules
+.git
+*.log
+.env

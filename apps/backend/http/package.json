@@ -1,0 +1,9 @@
+{
+  "name": "http-backend",
+  "version": "0.1.0",
+  "scripts": {
+    "build": "make build",
+    "dev": "make run",
+    "lint": "make lint"
+  }
+}

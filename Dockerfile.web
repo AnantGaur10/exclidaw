@@ -1,0 +1,22 @@
+FROM node:20
+
+# Install pnpm globally
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
+WORKDIR /app
+
+# Copy everything
+COPY . .
+
+# Install dependencies with pnpm (monorepo-aware)
+RUN pnpm install
+
+# Set working dir to web app
+WORKDIR /app/apps/web
+
+# Run build via pnpm
+RUN pnpm turbo run build --filter=web...
+
+
+EXPOSE 3000
+CMD ["pnpm", "start"]
