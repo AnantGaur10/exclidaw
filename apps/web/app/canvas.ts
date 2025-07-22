@@ -4,7 +4,7 @@ export enum ShapeType {
     Line = 'line',
     Rectangle = 'rectangle',
     Pencil = 'pencil',
-    Circle = 'circle',
+    Ellipse = 'ellipse',
 }
 
 export interface Shape {
@@ -14,7 +14,7 @@ export interface Shape {
     y: number;
     width?: number;
     height?: number;
-    radius?: number;
+    // radius?: number;
     endX?: number;
     endY?: number;
     color: string;
@@ -274,11 +274,21 @@ export class CanvasHandler {
                 this.currentShape.width = currentX - this.startX;
                 this.currentShape.height = currentY - this.startY;
                 break;
-            case ShapeType.Circle:
-                this.currentShape.radius = Math.sqrt(
-                    Math.pow(currentX - this.startX, 2) + 
-                    Math.pow(currentY - this.startY, 2)
-                );
+            case ShapeType.Ellipse: // Replaces ShapeType.Circle
+                let width = currentX - this.startX;
+                let height = currentY - this.startY;
+
+                // If Shift key is pressed, constrain to a perfect circle
+                if (e.shiftKey) {
+                    // Use the larger dimension to define the side of the square
+                    const side = Math.max(Math.abs(width), Math.abs(height));
+                    // Keep the original direction of the drag
+                    width = side * Math.sign(width);
+                    height = side * Math.sign(height);
+                }
+
+                this.currentShape.width = width;
+                this.currentShape.height = height;
                 break;
             case ShapeType.Line:
                 this.currentShape.endX = currentX;
@@ -366,11 +376,18 @@ export class CanvasHandler {
                     this.ctx.rect(shape.x, shape.y, shape.width, shape.height);
                 }
                 break;
-            case ShapeType.Circle:
-                if (shape.radius !== undefined) {
-                    this.ctx.arc(shape.x, shape.y, shape.radius, 0, 2 * Math.PI);
-                }
-                break;
+            case ShapeType.Ellipse: // Replaces ShapeType.Circle
+            if (shape.width !== undefined && shape.height !== undefined) {
+                // Calculate center and radii from the bounding box
+                const radiusX = Math.abs(shape.width / 2);
+                const radiusY = Math.abs(shape.height / 2);
+                const centerX = shape.x + shape.width / 2;
+                const centerY = shape.y + shape.height / 2;
+
+                // Draw the ellipse
+                this.ctx.ellipse(centerX, centerY, radiusX, radiusY, 0, 0, 2 * Math.PI);
+            }
+            break;
             case ShapeType.Line:
                 if (shape.endX !== undefined && shape.endY !== undefined) {
                     this.ctx.moveTo(shape.x, shape.y);
@@ -409,7 +426,6 @@ export class CanvasHandler {
                 y: shapeData.y,
                 width: shapeData.width,
                 height: shapeData.height,
-                radius: shapeData.radius,
                 endX: shapeData.endX,
                 endY: shapeData.endY,
                 color: shapeData.color,

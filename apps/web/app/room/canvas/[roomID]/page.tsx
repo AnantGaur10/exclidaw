@@ -20,7 +20,7 @@ interface User {
 export interface UserShape {
     id: string;
     roomId: string;
-    type: "rectangle" | "circle" | "line" | "pencil";
+    type: "rectangle" | "ellipse" | "line" | "pencil";
     creatorId: string;
     color: string;
     strokeWidth: number;
@@ -282,8 +282,8 @@ export default function Canvas() {
                     Rectangle
                 </button>
                 <button 
-                    onClick={() => setCurrentTool(ShapeType.Circle)} 
-                    style={currentTool === ShapeType.Circle ? activeButtonStyle : buttonStyle}
+                    onClick={() => setCurrentTool(ShapeType.Ellipse)} 
+                    style={currentTool === ShapeType.Ellipse ? activeButtonStyle : buttonStyle}
                 >
                     Circle
                 </button>
