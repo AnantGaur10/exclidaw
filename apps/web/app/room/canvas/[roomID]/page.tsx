@@ -7,7 +7,7 @@ import { useSocket } from "../../../hooks/useSocket";
 
 // Server message structure
 interface ServerMessage {
-    Type: 'initial_state' | 'draw' | 'error' | 'undo' | 'pencil_chunk';
+    Type: 'initial_state' | 'draw' | 'error' | 'undo' | 'pencil_chunk' | 'erase'; // <-- MODIFIED
     content?: any;
     sender?: { id: string; name: string };
 }
@@ -78,9 +78,17 @@ export default function Canvas() {
                     break;
                     
                 case 'undo':
-                    const { shapeID } = data.content;
-                    if (shapeID) {
-                        handlerRef.current?.removeShapeById(shapeID);
+                    const { shapeID: undoShapeID } = data.content;
+                    if (undoShapeID) {
+                        handlerRef.current?.removeShapeById(undoShapeID);
+                    }
+                    break;
+
+                // <-- NEW case for handling remote erase events
+                case 'erase':
+                    const { shapeID: eraseShapeID } = data.content;
+                    if (eraseShapeID) {
+                        handlerRef.current?.removeShapeById(eraseShapeID);
                     }
                     break;
                     
@@ -117,6 +125,7 @@ export default function Canvas() {
         }
     }, [isConnected, roomID, sendMessage]);
 
+    // <-- MODIFIED useEffect to pass the erase callback
     useEffect(() => {
         console.log("Initializing CanvasHandler with roomID:", roomID);
         const canvas = canvasRef.current;
@@ -140,7 +149,17 @@ export default function Canvas() {
             }
         };
 
-        handlerRef.current = new CanvasHandler(canvas, handleShapeAdd, handlePencilChunk);
+        // <-- NEW callback for erasing
+        const handleShapeErase = (shapeId: string) => {
+            if (isConnected) {
+                sendMessage({
+                    Type: "erase",
+                    Message: { shapeID: shapeId }
+                });
+            }
+        };
+
+        handlerRef.current = new CanvasHandler(canvas, handleShapeAdd, handlePencilChunk, handleShapeErase);
         
         const handleResize = () => handlerRef.current?.resize();
         window.addEventListener('resize', handleResize);
@@ -176,24 +195,17 @@ export default function Canvas() {
     
       useEffect(() => {
         const handleKeyDown = (event: KeyboardEvent) => {
-            // Check for Ctrl+Z for Undo
             if (event.ctrlKey && event.key === 'z') {
                 event.preventDefault();
-                handleUndo(); // Call the unified undo handler
+                handleUndo();
             }
-
         };
-
-        // Add the event listener to the document
         document.addEventListener('keydown', handleKeyDown);
-
-        // Cleanup function to remove the listener when the component unmounts
         return () => {
             document.removeEventListener('keydown', handleKeyDown);
         };
     }, [handleUndo]);
     
-
     const addUserToRoom = useCallback(async () => {
         if (!userToAdd.trim()) return;
         try {
@@ -227,6 +239,9 @@ export default function Canvas() {
         boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
         color: "black",
         transition: 'all 0.2s ease-in-out',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
     };
 
     const activeButtonStyle = {
@@ -291,54 +306,41 @@ export default function Canvas() {
                 boxShadow: '0 4px 8px rgba(0,0,0,0.15)',
                 zIndex: 10,
             }}>
-                <button 
-                    onClick={() => setCurrentTool(ShapeType.Rectangle)} 
-                    style={currentTool === ShapeType.Rectangle ? activeButtonStyle : buttonStyle}
-                >
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none"
-                    xmlns="http://www.w3.org/2000/svg">
-                    <rect x="4" y="6" width="16" height="12"
-                        stroke="currentColor" strokeWidth="2" fill="none" />
-                </svg>
-                </button>
-                <button 
-                    onClick={() => setCurrentTool(ShapeType.Ellipse)} 
-                    style={currentTool === ShapeType.Ellipse ? activeButtonStyle : buttonStyle}
-                >
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none"
-                        xmlns="http://www.w3.org/2000/svg">
-                        <circle cx="12" cy="12" r="8"
-                                stroke="currentColor" strokeWidth="2" fill="none" />
+                {/* --- Rectangle Button --- */}
+                <button onClick={() => setCurrentTool(ShapeType.Rectangle)} style={currentTool === ShapeType.Rectangle ? activeButtonStyle : buttonStyle}>
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <rect x="4" y="6" width="16" height="12" stroke="currentColor" strokeWidth="2" fill="none" />
                     </svg>
                 </button>
-                <button 
-                    onClick={() => setCurrentTool(ShapeType.Line)} 
-                    style={currentTool === ShapeType.Line ? activeButtonStyle : buttonStyle}
-                >
-                    <svg
-                    width="24"
-                    height="24"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    xmlns="http://www.w3.org/2000/svg"
-                >
-                    <line x1="4" y1="12" x2="20" y2="12" stroke="currentColor" strokeWidth="2" />
-                </svg>
-                </button>
-                <button 
-                    onClick={() => setCurrentTool(ShapeType.Pencil)} 
-                    style={currentTool === ShapeType.Pencil ? activeButtonStyle : buttonStyle}
-                >
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="size-6">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" />
+                {/* --- Ellipse Button --- */}
+                <button onClick={() => setCurrentTool(ShapeType.Ellipse)} style={currentTool === ShapeType.Ellipse ? activeButtonStyle : buttonStyle}>
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <circle cx="12" cy="12" r="8" stroke="currentColor" strokeWidth="2" fill="none" />
                     </svg>
+                </button>
+                {/* --- Line Button --- */}
+                <button onClick={() => setCurrentTool(ShapeType.Line)} style={currentTool === ShapeType.Line ? activeButtonStyle : buttonStyle}>
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <line x1="4" y1="12" x2="20" y2="12" stroke="currentColor" strokeWidth="2" />
+                    </svg>
+                </button>
+                {/* --- Pencil Button --- */}
+                <button onClick={() => setCurrentTool(ShapeType.Pencil)} style={currentTool === ShapeType.Pencil ? activeButtonStyle : buttonStyle}>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" />
+                    </svg>
+                </button>
+                
+                {/* <-- NEW Eraser Button --> */}
+                <button onClick={() => setCurrentTool(ShapeType.Eraser)} style={currentTool === ShapeType.Eraser ? activeButtonStyle : buttonStyle}>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M19.1 4.9C15.2 1 8.8 1 4.9 4.9S1 15.2 4.9 19.1s10.3 3.9 14.2 0L21 12l-7-7z"></path>
+                        <path d="M12 21.1V12"></path>
+                    </svg>
+                </button>
 
-                </button>
                 <button onClick={handleUndo} style={buttonStyle}>
                     Undo (Ctrl+Z)
-                </button>
-                <button onClick={handleClear} style={buttonStyle}>
-                    Clear
                 </button>
                 <div className="add-user" style={{ display: 'flex', gap: '5px' }}>
                     <input

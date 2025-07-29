@@ -20,3 +20,24 @@ export const Button = ({disabled,children, className}: ButtonProps) => {
     </button>
   );
 };
+
+
+interface TransferButtonProps {
+  disabled?: boolean;
+  children: ReactNode;
+  className?: string;
+  type ?: "button" | "submit" | "reset";
+  onClick?: () => void;
+}
+
+
+export const TransferButton = ({disabled,children, className}: TransferButtonProps) => {
+  return (
+    <button
+      className={className}
+      disabled={disabled}
+    >
+      {children}
+    </button>
+  );
+};

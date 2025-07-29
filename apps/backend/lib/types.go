@@ -27,6 +27,7 @@ const (
 	MessageTypeDraw        MessageType = "draw"
 	MessageTypeUndo        MessageType = "undo"
 	MessageTypePencilChunk MessageType = "pencil_chunk"
+	MessageTypeErase       MessageType = "erase"
 )
 
 type IncomingSignupPayload struct {
@@ -141,10 +142,10 @@ type IncomingShape struct {
 	Points      [][]int   `json:"points"`
 	Color       string    `json:"color"`
 	// Radius      float64   `json:"radius"`
-	Height      int       `json:"height"`
-	Width       int       `json:"width"`
-	EndX        int       `json:"endX"`
-	EndY        int       `json:"endY"`
+	Height int `json:"height"`
+	Width  int `json:"width"`
+	EndX   int `json:"endX"`
+	EndY   int `json:"endY"`
 }
 
 // This is the primary model for storing drawing elements.

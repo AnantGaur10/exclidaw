@@ -314,12 +314,12 @@ func (cs *ChatServer) handlePostJoinMessage(user *User, msg *EnhancedMessage) {
 		cs.handleChatMessage(user, msg)
 	case lib.MessageTypeDraw:
 		cs.handleDrawMessage(user, msg)
-	// highlight-start
 	case lib.MessageTypePencilChunk:
 		cs.handlePencilChunkMessage(user, msg)
-	// highlight-end
 	case lib.MessageTypeUndo:
 		cs.handleUndoMessage(user, msg)
+	case lib.MessageTypeErase:
+		cs.handleEraseMessage(user, msg)
 	case lib.MessageTypeJoin:
 		cs.sendErrorToUser(user, "Already joined a room")
 	case lib.MessageTypeLeave:
@@ -390,6 +390,63 @@ func (cs *ChatServer) handleJoinRoom(user *User, msg *EnhancedMessage) {
 		cs.sendMessageToUser(user, initialStateMsg)
 		log.Printf("Sent %d existing shapes and user info to user %s for room %s", len(shapes), user.ID, roomID)
 	}()
+}
+
+func (cs *ChatServer) handleEraseMessage(user *User, msg *EnhancedMessage) {
+	user.mu.RLock()
+	roomID := user.RoomID
+	user.mu.RUnlock()
+	if roomID == nil {
+		cs.sendErrorToUser(user, "Cannot erase, not in a room")
+		return
+	}
+
+	cs.mu.RLock()
+	room, exists := cs.Rooms[*roomID]
+	cs.mu.RUnlock()
+	if !exists {
+		cs.sendErrorToUser(user, "Room no longer exists")
+		return
+	}
+
+	shapeIDInterface, ok := msg.Message["shapeID"]
+	if !ok {
+		cs.sendErrorToUser(user, "shapeID is required for erase message")
+		return
+	}
+	shapeIDStr, ok := shapeIDInterface.(string)
+	if !ok {
+		cs.sendErrorToUser(user, "shapeID must be a string")
+		return
+	}
+
+	shapeID, err := uuid.Parse(shapeIDStr)
+	if err != nil {
+		cs.sendErrorToUser(user, "Invalid Shape ID format for erase")
+		return
+	}
+
+	// Delete the shape from the database
+	if err := lib.ShapeRepositoryInstance.DeleteShape(shapeID); err != nil {
+		log.Printf("Failed to delete shape %s for erase: %v", shapeID, err)
+		// Don't send an error to the user, as the shape might have already been deleted.
+		// The client already performed the action optimistically.
+		return
+	}
+
+	// Broadcast the erase action to the room so other clients can remove the shape
+	userMessage := &UserMessage{
+		UserID:   user.ID.String(),
+		UserName: user.UserName,
+		Message: map[string]interface{}{
+			"shapeID": shapeID.String(),
+		},
+	}
+
+	room.BroadCastMessageChannel() <- &BroadcastPayload{
+		Type:    lib.MessageTypeErase, // Use the new type
+		Message: userMessage,
+	}
 }
 
 func (cs *ChatServer) handleChatMessage(user *User, msg *EnhancedMessage) {
@@ -584,6 +641,7 @@ func (cs *ChatServer) handleUndoMessage(user *User, msg *EnhancedMessage) {
 		Message: userMessage,
 	}
 }
+
 // highlight-end
 
 func (cs *ChatServer) handleLeaveRoom(user *User, msg *EnhancedMessage) {
