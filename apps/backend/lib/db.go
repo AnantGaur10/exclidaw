@@ -115,7 +115,7 @@ func (u *UserRepository) GetUserByName(id string) (*User, error) {
 			return nil, fmt.Errorf("user with ID %s not found", id)
 		}
 		log.Printf("Database Error while fetching the User %s : %v\n", id, result.Error)
-		return nil, fmt.Errorf("Failed to fetch User %w :", result.Error)
+		return nil, fmt.Errorf("failed to fetch User %w :", result.Error)
 	}
 	return &user, nil
 }
@@ -138,7 +138,7 @@ func (r *ChatRepository) CreateRoom(roomID, userId uuid.UUID, name string, descr
 	}
 	result := r.db.Create(room)
 	if result.Error != nil {
-		return nil, fmt.Errorf("Failed to create Room with id %v by user %v due to:%v", roomID, userId, result.Error)
+		return nil, fmt.Errorf("failed to create Room with id %v by user %v due to:%v", roomID, userId, result.Error)
 	}
 
 	res := r.db.Create(&UserRoom{
@@ -147,7 +147,7 @@ func (r *ChatRepository) CreateRoom(roomID, userId uuid.UUID, name string, descr
 		Role:   string(Creator),
 	})
 	if res.Error != nil {
-		return nil, fmt.Errorf("Failed to create Room with id %v by user %v due to:%v", roomID, userId, res.Error)
+		return nil, fmt.Errorf("failed to create Room with id %v by user %v due to:%v", roomID, userId, res.Error)
 	}
 	return room, nil
 }

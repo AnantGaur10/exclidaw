@@ -86,7 +86,6 @@ export default function Canvas() {
                     
                 case 'error':
                     console.error("Server error:", data.content?.error);
-                    alert(`Error from server: ${data.content?.error}`);
                     if (data.content?.error.includes("authorized")) {
                         navigate.push('/join-room');
                     }
@@ -104,7 +103,6 @@ export default function Canvas() {
 
     useEffect(() => {
         if (error) {
-            alert(error);
             navigate.push('/join-room');
         }
     }, [error, navigate]);
@@ -159,8 +157,6 @@ export default function Canvas() {
     }, [currentTool]);
 
     // --- UI Handlers and Styles ---
-    const handleClear = () => handlerRef.current?.clear();
-    
     const handleUndo = () => {
         const undoneShape = handlerRef.current?.undo();
         console.log("Locally undid shape:", undoneShape);
@@ -175,6 +171,28 @@ export default function Canvas() {
             console.log("Sent undo request to server for shape ID:", undoneShape.id);
         }
     };
+    
+    const handleClear = () => handlerRef.current?.clear();
+    
+      useEffect(() => {
+        const handleKeyDown = (event: KeyboardEvent) => {
+            // Check for Ctrl+Z for Undo
+            if (event.ctrlKey && event.key === 'z') {
+                event.preventDefault();
+                handleUndo(); // Call the unified undo handler
+            }
+
+        };
+
+        // Add the event listener to the document
+        document.addEventListener('keydown', handleKeyDown);
+
+        // Cleanup function to remove the listener when the component unmounts
+        return () => {
+            document.removeEventListener('keydown', handleKeyDown);
+        };
+    }, [handleUndo]);
+    
 
     const addUserToRoom = useCallback(async () => {
         if (!userToAdd.trim()) return;
@@ -188,11 +206,9 @@ export default function Canvas() {
                 const errData = await response.json();
                 throw new Error(errData.error || 'Failed to add user');
             }
-            alert(`User '${userToAdd}' added successfully!`);
             setUserToAdd('');
         } catch (err: any) {
             console.error('Error adding user:', err);
-            alert(`Error: ${err.message}`);
         }
     }, [userToAdd, roomID]);
 
@@ -279,25 +295,44 @@ export default function Canvas() {
                     onClick={() => setCurrentTool(ShapeType.Rectangle)} 
                     style={currentTool === ShapeType.Rectangle ? activeButtonStyle : buttonStyle}
                 >
-                    Rectangle
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none"
+                    xmlns="http://www.w3.org/2000/svg">
+                    <rect x="4" y="6" width="16" height="12"
+                        stroke="currentColor" strokeWidth="2" fill="none" />
+                </svg>
                 </button>
                 <button 
                     onClick={() => setCurrentTool(ShapeType.Ellipse)} 
                     style={currentTool === ShapeType.Ellipse ? activeButtonStyle : buttonStyle}
                 >
-                    Circle
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none"
+                        xmlns="http://www.w3.org/2000/svg">
+                        <circle cx="12" cy="12" r="8"
+                                stroke="currentColor" strokeWidth="2" fill="none" />
+                    </svg>
                 </button>
                 <button 
                     onClick={() => setCurrentTool(ShapeType.Line)} 
                     style={currentTool === ShapeType.Line ? activeButtonStyle : buttonStyle}
                 >
-                    Line
+                    <svg
+                    width="24"
+                    height="24"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    xmlns="http://www.w3.org/2000/svg"
+                >
+                    <line x1="4" y1="12" x2="20" y2="12" stroke="currentColor" strokeWidth="2" />
+                </svg>
                 </button>
                 <button 
                     onClick={() => setCurrentTool(ShapeType.Pencil)} 
                     style={currentTool === ShapeType.Pencil ? activeButtonStyle : buttonStyle}
                 >
-                    Pencil
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="size-6">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" />
+                    </svg>
+
                 </button>
                 <button onClick={handleUndo} style={buttonStyle}>
                     Undo (Ctrl+Z)

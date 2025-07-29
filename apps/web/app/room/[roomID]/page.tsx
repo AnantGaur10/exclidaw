@@ -41,7 +41,6 @@ export default function RoomPage() {
       if (message.Type === 'chat') {
         setMessages(prev => [...prev, message]);
       } else if (message.Type === 'error') {
-        alert(`Server Error: ${message.content.error}`);
       }
     } catch (err) {
       console.error('Invalid message format received:', err);
@@ -63,7 +62,6 @@ export default function RoomPage() {
       })
       .catch(err => {
         console.error('Error fetching initial messages:', err);
-        alert('Could not load chat history.');
       })
       .finally(() => {
         setInitialChatsLoaded(true);
@@ -83,7 +81,6 @@ export default function RoomPage() {
   // 5. Effect to handle connection errors
   useEffect(() => {
     if (error) {
-      alert(error);
       router.push('/join-room');
     }
   }, [error, router]);
@@ -121,11 +118,9 @@ export default function RoomPage() {
         const errData = await response.json();
         throw new Error(errData.error || 'Failed to add user');
       }
-      alert(`User '${userToAdd}' added successfully!`);
       setUserToAdd('');
     } catch (err: any) {
       console.error('Error adding user:', err);
-      alert(`Error: ${err.message}`);
     }
   }, [userToAdd, roomId]);
 

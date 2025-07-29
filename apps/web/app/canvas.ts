@@ -98,7 +98,6 @@ export class CanvasHandler {
         this.canvas.addEventListener('mousemove', this.boundHandleMouseMove);
         this.canvas.addEventListener('mouseup', this.boundHandleMouseUp);
         this.canvas.addEventListener('mouseleave', this.boundHandleMouseUp);
-        document.addEventListener("keydown", (event) => this.handleKeyDown(event));
     } 
 
     private simplifyPath(points: number[][], tolerance: number): number[][] {
@@ -337,6 +336,7 @@ export class CanvasHandler {
     private handleKeyDown(event: KeyboardEvent): void {
         if (event.ctrlKey && event.code === "KeyZ") {
             event.preventDefault(); 
+            
             // The undo logic is now handled by the UI component
         }
         if (event.ctrlKey && event.code === "KeyU") {
