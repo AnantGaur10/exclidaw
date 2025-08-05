@@ -7,7 +7,7 @@ import { useSocket } from "../../../hooks/useSocket";
 
 // Server message structure
 interface ServerMessage {
-    Type: 'initial_state' | 'draw' | 'error' | 'undo' | 'pencil_chunk' | 'erase'; // <-- MODIFIED
+    Type: 'initial_state' | 'draw' | 'error' | 'undo' | 'pencil_chunk' | 'erase' | 'cursor_move' | 'user_left'; 
     content?: any;
     sender?: { id: string; name: string };
 }
@@ -53,13 +53,11 @@ export default function Canvas() {
     const handleSocketMessage = useCallback((event: MessageEvent) => {
         try {
             const data: ServerMessage = JSON.parse(event.data);
-            console.log("Received message:", data);
-
+            
             switch (data.Type) {
                 case 'initial_state':
                     console.log(`Initial data is:`, data);
                     if (data.content?.shapes && data.content?.user?.userID) {
-                        console.log("Shapes received from server:", data.content.shapes);
                         handlerRef.current?.loadShapes(data.content.shapes, data.content.user.userID);
                     }
                     if (data.content?.user) {
@@ -84,18 +82,29 @@ export default function Canvas() {
                     }
                     break;
 
-                // <-- NEW case for handling remote erase events
                 case 'erase':
                     const { shapeID: eraseShapeID } = data.content;
                     if (eraseShapeID) {
                         handlerRef.current?.removeShapeById(eraseShapeID);
                     }
                     break;
+                
+                case 'cursor_move':
+                    if (data.sender && data.content) {
+                        handlerRef.current?.updateRemoteCursor(data.sender.id, data.sender.name, data.content);
+                    }
+                    break;
+                
+                case 'user_left':
+                    if (data.content?.userID) {
+                         handlerRef.current?.removeRemoteCursor(data.content.userID);
+                    }
+                    break;
                     
                 case 'error':
                     console.error("Server error:", data.content?.error);
                     if (data.content?.error.includes("authorized")) {
-                        navigate.push('/join-room');
+                        navigate.push('/room');
                     }
                     break;
             }
@@ -108,15 +117,13 @@ export default function Canvas() {
     const { isConnected, error, sendMessage } = useSocket(WS_URL, handleSocketMessage);
 
     // --- Lifecycle Effects ---
-
     useEffect(() => {
         if (error) {
-            navigate.push('/join-room');
+            navigate.push('/room');
         }
     }, [error, navigate]);
 
     useEffect(() => {
-        console.log("WebSocket connection status:", isConnected, "and roomId:", roomID);
         if (isConnected && roomID) {
             sendMessage({
                 Type: 'join',
@@ -125,41 +132,41 @@ export default function Canvas() {
         }
     }, [isConnected, roomID, sendMessage]);
 
-    // <-- MODIFIED useEffect to pass the erase callback
     useEffect(() => {
-        console.log("Initializing CanvasHandler with roomID:", roomID);
         const canvas = canvasRef.current;
         if (!canvas) return;
 
         const handleShapeAdd = (shape: Shape) => {
             if (isConnected) {
-                sendMessage({
-                    Type: "draw",
-                    Message: shape
-                });
+                sendMessage({ Type: "draw", Message: shape });
             }
         };
 
         const handlePencilChunk = (chunk: PencilChunk) => {
             if (isConnected) {
-                sendMessage({
-                    Type: "pencil_chunk",
-                    Message: chunk
-                });
+                sendMessage({ Type: "pencil_chunk", Message: chunk });
             }
         };
 
-        // <-- NEW callback for erasing
         const handleShapeErase = (shapeId: string) => {
             if (isConnected) {
-                sendMessage({
-                    Type: "erase",
-                    Message: { shapeID: shapeId }
-                });
+                sendMessage({ Type: "erase", Message: { shapeID: shapeId } });
+            }
+        };
+        
+        const handleCursorMove = (coords: { x: number, y: number }) => {
+            if (isConnected) {
+                sendMessage({ Type: "cursor_move", Message: coords });
             }
         };
 
-        handlerRef.current = new CanvasHandler(canvas, handleShapeAdd, handlePencilChunk, handleShapeErase);
+        handlerRef.current = new CanvasHandler(
+            canvas, 
+            handleShapeAdd, 
+            handlePencilChunk, 
+            handleShapeErase,
+            handleCursorMove 
+        );
         
         const handleResize = () => handlerRef.current?.resize();
         window.addEventListener('resize', handleResize);
@@ -176,24 +183,17 @@ export default function Canvas() {
     }, [currentTool]);
 
     // --- UI Handlers and Styles ---
-    const handleUndo = () => {
+    const handleUndo = useCallback(() => {
         const undoneShape = handlerRef.current?.undo();
-        console.log("Locally undid shape:", undoneShape);
-
         if (isConnected && undoneShape) {
             sendMessage({
                 Type: "undo",
-                Message: { 
-                    shapeID: undoneShape.id 
-                }
+                Message: { shapeID: undoneShape.id }
             });
-            console.log("Sent undo request to server for shape ID:", undoneShape.id);
         }
-    };
+    }, [isConnected, sendMessage]);
     
-    const handleClear = () => handlerRef.current?.clear();
-    
-      useEffect(() => {
+    useEffect(() => {
         const handleKeyDown = (event: KeyboardEvent) => {
             if (event.ctrlKey && event.key === 'z') {
                 event.preventDefault();
@@ -201,9 +201,7 @@ export default function Canvas() {
             }
         };
         document.addEventListener('keydown', handleKeyDown);
-        return () => {
-            document.removeEventListener('keydown', handleKeyDown);
-        };
+        return () => document.removeEventListener('keydown', handleKeyDown);
     }, [handleUndo]);
     
     const addUserToRoom = useCallback(async () => {
@@ -225,140 +223,31 @@ export default function Canvas() {
     }, [userToAdd, roomID]);
 
     const handleAddUserKeyPress = (e: React.KeyboardEvent) => {
-        if (e.key === 'Enter') {
-            addUserToRoom();
-        }
+        if (e.key === 'Enter') addUserToRoom();
     };
 
-    const buttonStyle = {
-        padding: '8px 16px',
-        border: '1px solid #ccc',
-        borderRadius: '5px',
-        cursor: 'pointer',
-        backgroundColor: '#fff',
-        boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-        color: "black",
-        transition: 'all 0.2s ease-in-out',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-    };
-
-    const activeButtonStyle = {
-        ...buttonStyle,
-        backgroundColor: '#007bff',
-        color: 'white',
-        borderColor: '#0056b3',
-    };
-
-    const connectionStatusStyle = {
-        position: 'absolute' as const,
-        top: '20px',
-        right: '20px',
-        padding: '6px 12px',
-        borderRadius: '15px',
-        backgroundColor: isConnected ? '#28a745' : (error ? '#dc3545' : '#ffc107'),
-        color: 'white',
-        fontSize: '14px',
-        fontWeight: 'bold',
-        zIndex: 10,
-        boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '6px',
-    };
+    const buttonStyle = { padding: '8px 16px', border: '1px solid #ccc', borderRadius: '5px', cursor: 'pointer', backgroundColor: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', color: "black", transition: 'all 0.2s ease-in-out', display: 'flex', alignItems: 'center', justifyContent: 'center' };
+    const activeButtonStyle = { ...buttonStyle, backgroundColor: '#007bff', color: 'white', borderColor: '#0056b3' };
+    const connectionStatusStyle = { position: 'absolute' as const, top: '20px', right: '20px', padding: '6px 12px', borderRadius: '15px', backgroundColor: isConnected ? '#28a745' : (error ? '#dc3545' : '#ffc107'), color: 'white', fontSize: '14px', fontWeight: 'bold', zIndex: 10, boxShadow: '0 2px 4px rgba(0,0,0,0.2)', display: 'flex', alignItems: 'center', gap: '6px' };
 
     if (!isConnected && !error) {
-        return (
-            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', background: '#f8f9fa' }}>
-                <p style={{ fontSize: '1.2rem', color: '#6c757d' }}>Connecting to the canvas...</p>
-            </div>
-        );
+        return <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', background: '#f8f9fa' }}><p style={{ fontSize: '1.2rem', color: '#6c757d' }}>Connecting to the canvas...</p></div>;
     }
 
     return (
         <div style={{ width: '100vw', height: '100vh', overflow: 'hidden', background: '#f8f9fa' }}>
-            <div style={connectionStatusStyle}>
-                <span>{isConnected ? '●' : '○'}</span>
-                <span>{isConnected ? 'Connected' : (error ? 'Error' : 'Connecting...')}</span>
-            </div>
-
-            <canvas 
-                ref={canvasRef} 
-                style={{ 
-                    display: 'block',
-                    width: '100%',
-                    height: '100%',
-                    background: '#ffffff' 
-                }} 
-            />
-
-            <div style={{
-                position: 'absolute' as const,
-                top: '10px',
-                left: '10px',
-                display: 'flex',
-                flexWrap: 'wrap',
-                gap: '10px',
-                backgroundColor: 'rgba(240, 240, 240, 0.9)',
-                padding: '10px',
-                borderRadius: '8px',
-                boxShadow: '0 4px 8px rgba(0,0,0,0.15)',
-                zIndex: 10,
-            }}>
-                {/* --- Rectangle Button --- */}
-                <button onClick={() => setCurrentTool(ShapeType.Rectangle)} style={currentTool === ShapeType.Rectangle ? activeButtonStyle : buttonStyle}>
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <rect x="4" y="6" width="16" height="12" stroke="currentColor" strokeWidth="2" fill="none" />
-                    </svg>
-                </button>
-                {/* --- Ellipse Button --- */}
-                <button onClick={() => setCurrentTool(ShapeType.Ellipse)} style={currentTool === ShapeType.Ellipse ? activeButtonStyle : buttonStyle}>
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <circle cx="12" cy="12" r="8" stroke="currentColor" strokeWidth="2" fill="none" />
-                    </svg>
-                </button>
-                {/* --- Line Button --- */}
-                <button onClick={() => setCurrentTool(ShapeType.Line)} style={currentTool === ShapeType.Line ? activeButtonStyle : buttonStyle}>
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <line x1="4" y1="12" x2="20" y2="12" stroke="currentColor" strokeWidth="2" />
-                    </svg>
-                </button>
-                {/* --- Pencil Button --- */}
-                <button onClick={() => setCurrentTool(ShapeType.Pencil)} style={currentTool === ShapeType.Pencil ? activeButtonStyle : buttonStyle}>
-                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" />
-                    </svg>
-                </button>
-                
-                {/* <-- NEW Eraser Button --> */}
-                <button onClick={() => setCurrentTool(ShapeType.Eraser)} style={currentTool === ShapeType.Eraser ? activeButtonStyle : buttonStyle}>
-                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M19.1 4.9C15.2 1 8.8 1 4.9 4.9S1 15.2 4.9 19.1s10.3 3.9 14.2 0L21 12l-7-7z"></path>
-                        <path d="M12 21.1V12"></path>
-                    </svg>
-                </button>
-
-                <button onClick={handleUndo} style={buttonStyle}>
-                    Undo (Ctrl+Z)
-                </button>
+            <div style={connectionStatusStyle}><span>{isConnected ? '●' : '○'}</span><span>{isConnected ? 'Connected' : (error ? 'Error' : 'Connecting...')}</span></div>
+            <canvas ref={canvasRef} style={{ display: 'block', width: '100%', height: '100%', background: '#ffffff' }} />
+            <div style={{ position: 'absolute' as const, top: '10px', left: '10px', display: 'flex', flexWrap: 'wrap', gap: '10px', backgroundColor: 'rgba(240, 240, 240, 0.9)', padding: '10px', borderRadius: '8px', boxShadow: '0 4px 8px rgba(0,0,0,0.15)', zIndex: 10 }}>
+                <button onClick={() => setCurrentTool(ShapeType.Rectangle)} style={currentTool === ShapeType.Rectangle ? activeButtonStyle : buttonStyle}><svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="4" y="6" width="16" height="12" stroke="currentColor" strokeWidth="2" fill="none" /></svg></button>
+                <button onClick={() => setCurrentTool(ShapeType.Ellipse)} style={currentTool === ShapeType.Ellipse ? activeButtonStyle : buttonStyle}><svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="8" stroke="currentColor" strokeWidth="2" fill="none" /></svg></button>
+                <button onClick={() => setCurrentTool(ShapeType.Line)} style={currentTool === ShapeType.Line ? activeButtonStyle : buttonStyle}><svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><line x1="4" y1="12" x2="20" y2="12" stroke="currentColor" strokeWidth="2" /></svg></button>
+                <button onClick={() => setCurrentTool(ShapeType.Pencil)} style={currentTool === ShapeType.Pencil ? activeButtonStyle : buttonStyle}><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" /></svg></button>
+                <button onClick={() => setCurrentTool(ShapeType.Eraser)} style={currentTool === ShapeType.Eraser ? activeButtonStyle : buttonStyle}><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19.1 4.9C15.2 1 8.8 1 4.9 4.9S1 15.2 4.9 19.1s10.3 3.9 14.2 0L21 12l-7-7z"></path><path d="M12 21.1V12"></path></svg></button>
+                <button onClick={handleUndo} style={buttonStyle}>Undo (Ctrl+Z)</button>
                 <div className="add-user" style={{ display: 'flex', gap: '5px' }}>
-                    <input
-                        type="text"
-                        value={userToAdd}
-                        onChange={(e) => setUserToAdd(e.target.value)}
-                        onKeyDown={handleAddUserKeyPress}
-                        placeholder="Enter Username to Add"
-                        style={{
-                            padding: '6px 10px',
-                            borderRadius: '4px',
-                            border: '1px solid #ccc',
-                            fontSize: '14px'
-                        }}
-                    />
-                    <button onClick={addUserToRoom} style={buttonStyle}>
-                        Add User
-                    </button>
+                    <input type="text" value={userToAdd} onChange={(e) => setUserToAdd(e.target.value)} onKeyDown={handleAddUserKeyPress} placeholder="Enter Username to Add" style={{ padding: '6px 10px', borderRadius: '4px', border: '1px solid #ccc', fontSize: '14px' }}/>
+                    <button onClick={addUserToRoom} style={buttonStyle}>Add User</button>
                 </div>
             </div>
         </div>

@@ -93,6 +93,17 @@ func (r *Room) Run() {
 			if _, ok := r.Users[user.ID]; ok {
 				log.Printf("User %s (%s) left room %s", user.ID, user.UserName, r.ID)
 				delete(r.Users, user.ID)
+
+				leftMessage := &UserMessage{
+					UserID:   user.ID.String(),
+					UserName: user.UserName,
+					Message:  map[string]interface{}{"userID": user.ID.String()},
+				}
+				go r.broadcastMessage(&BroadcastPayload{
+					Type:    lib.MessageTypeUserLeft,
+					Message: leftMessage,
+				})
+
 			}
 			r.mu.Unlock()
 
@@ -129,7 +140,7 @@ func (r *Room) broadcastMessage(payload *BroadcastPayload) {
 
 	for userID, user := range r.Users {
 		// Don't send the message back to the original sender for actions they initiated
-		if user.ID.String() == userMsg.UserID {
+		if user.ID.String() == userMsg.UserID && payload.Type != lib.MessageTypeUserLeft {
 			continue
 		}
 
@@ -322,8 +333,10 @@ func (cs *ChatServer) handlePostJoinMessage(user *User, msg *EnhancedMessage) {
 		cs.handleEraseMessage(user, msg)
 	case lib.MessageTypeJoin:
 		cs.sendErrorToUser(user, "Already joined a room")
-	case lib.MessageTypeLeave:
+	case lib.MessageTypeUserLeft:
 		cs.handleLeaveRoom(user, msg)
+	case lib.MessageTypeCursorMove:
+		cs.handleCursorMoveMessage(user, msg)
 	default:
 		log.Printf("Unknown message type '%s' from user %s", msg.Type, user.ID)
 	}
@@ -682,6 +695,36 @@ func (cs *ChatServer) handleLeaveRoom(user *User, msg *EnhancedMessage) {
 	// Unregister user with room
 	room.UnregisterUser(user)
 }
+
+func (cs *ChatServer) handleCursorMoveMessage(user *User, msg *EnhancedMessage) {
+	user.mu.RLock()
+	roomID := user.RoomID
+	user.mu.RUnlock()
+
+	if roomID == nil {
+		return // Silently ignore if not in a room
+	}
+
+	cs.mu.RLock()
+	room, exists := cs.Rooms[*roomID]
+	cs.mu.RUnlock()
+	if !exists {
+		return // Silently ignore if room is gone
+	}
+
+	// Just broadcast the coordinates. No DB persistence.
+	userMessage := &UserMessage{
+		UserID:   user.ID.String(),
+		UserName: user.UserName,
+		Message:  msg.Message,
+	}
+
+	room.BroadCastMessageChannel() <- &BroadcastPayload{
+		Type:    lib.MessageTypeCursorMove,
+		Message: userMessage,
+	}
+}
+
 func (cs *ChatServer) sendPongToUser(user *User) {
 	pongMsg := map[string]interface{}{"type": "pong"}
 	cs.sendMessageToUser(user, pongMsg)

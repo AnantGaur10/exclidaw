@@ -23,11 +23,12 @@ const (
 	MessageTypePing        MessageType = "ping"
 	MessageTypePong        MessageType = "pong"
 	MessageTypeStatus      MessageType = "status"
-	MessageTypeLeave       MessageType = "leave"
+	MessageTypeUserLeft    MessageType = "user_left"
 	MessageTypeDraw        MessageType = "draw"
 	MessageTypeUndo        MessageType = "undo"
 	MessageTypePencilChunk MessageType = "pencil_chunk"
 	MessageTypeErase       MessageType = "erase"
+	MessageTypeCursorMove  MessageType = "cursor_move"
 )
 
 type IncomingSignupPayload struct {
@@ -43,7 +44,7 @@ type IncomignSigninPayload struct {
 
 type IncomingRoomPayload struct {
 	Name        string `json:"Name" validate:"required,min=5,max=30"`
-	Description string `json:"Description" validate:"required,min=10,max=100"`
+	Description string `json:"Description" validate:"min=10,max=100"`
 	IsPrivate   bool   `json:"IsPrivate" validate:"boolean_required"`
 }
 

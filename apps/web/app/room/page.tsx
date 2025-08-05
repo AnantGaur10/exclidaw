@@ -330,24 +330,6 @@ export default function RoomManagementPage() {
                     </div>
 
                     {/* Privacy Toggle */}
-                    <div className="flex items-center space-x-4 p-4 bg-slate-800/30 rounded-xl border border-slate-700/50">
-                      <input
-                        type="checkbox"
-                        id="isPrivate"
-                        name="isPrivate"
-                        checked={createFormData.isPrivate}
-                        onChange={handleCreateChange}
-                        className="w-5 h-5 text-purple-600 bg-slate-700 border-slate-600 rounded focus:ring-purple-500 focus:ring-2"
-                      />
-                      <Label htmlFor="isPrivate" className="flex items-center space-x-2 text-slate-300 cursor-pointer">
-                        {createFormData.isPrivate ? (
-                          <Lock className="w-5 h-5 text-purple-400" />
-                        ) : (
-                          <Globe className="w-5 h-5 text-cyan-400" />
-                        )}
-                        <span className="font-medium">{createFormData.isPrivate ? "Private Room" : "Public Room"}</span>
-                      </Label>
-                    </div>
 
                     {/* Create Button */}
                     <Button

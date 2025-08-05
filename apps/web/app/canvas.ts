@@ -36,14 +36,20 @@ export interface PencilChunk {
     strokeWidth: number;
 }
 
+interface RemoteCursor {
+    x: number;
+    y: number;
+    name: string;
+}
+
 export class CanvasHandler {
     private boundHandleMouseDown: (e: MouseEvent) => void;
     private boundHandleMouseMove: (e: MouseEvent) => void;
     private boundHandleMouseUp: () => void;
     private canvas: HTMLCanvasElement;
     private ctx: CanvasRenderingContext2D;
-    private shapes: Shape[] = []; // Shapes drawn by the current user in this session
-    private remoteShapes: Shape[] = []; // Shapes drawn by other users
+    private shapes: Shape[] = [];
+    private remoteShapes: Shape[] = [];
     private currentShape: Shape | null = null;
     private animationId: number | null = null;
     private isDrawing: boolean = false;
@@ -55,6 +61,10 @@ export class CanvasHandler {
     private onPencilChunkCallback: ((chunk: PencilChunk) => void) | null = null;
     private onShapeEraseCallback: ((shapeId: string) => void) | null = null;
     private highlightedShapeId: string | null = null;
+    private onCursorMoveCallback: ((coords: { x: number; y: number }) => void) | null = null;
+    private remoteCursors: Map<string, RemoteCursor> = new Map();
+    private lastCursorSendTime: number = 0;
+    private readonly CURSOR_SEND_INTERVAL = 10; //100 per second
 
     private readonly CHUNK_SIZE = 50;
     private readonly MIN_DISTANCE = 2;
@@ -72,11 +82,13 @@ export class CanvasHandler {
         onShapeAdd: (shape: Shape) => void,
         onPencilChunk?: (chunk: PencilChunk) => void,
         onShapeErase?: (shapeId: string) => void,
+        onCursorMove?: (coords: { x: number; y: number }) => void,
     ) {
         this.canvas = canvas;
         this.onShapeAddCallback = onShapeAdd;
         this.onPencilChunkCallback = onPencilChunk || null;
         this.onShapeEraseCallback = onShapeErase || null;
+        this.onCursorMoveCallback = onCursorMove || null;
         this.canvas.tabIndex = 0;
         this.canvas.focus();
         const context = canvas.getContext("2d");
@@ -108,7 +120,6 @@ export class CanvasHandler {
         this.canvas.addEventListener('mouseleave', this.boundHandleMouseUp);
     }
     
-    // This is the key change: This function now ONLY checks against `this.shapes` (local user's shapes)
     private getShapeAtPoint(x: number, y: number): Shape | null {
         for (let i = this.shapes.length - 1; i >= 0; i--) {
             const shape = this.shapes[i]!;
@@ -200,6 +211,12 @@ export class CanvasHandler {
         const currentX = e.clientX - rect.left;
         const currentY = e.clientY - rect.top;
 
+        const now = Date.now();
+        if (this.onCursorMoveCallback && now - this.lastCursorSendTime > this.CURSOR_SEND_INTERVAL) {
+            this.onCursorMoveCallback({ x: currentX, y: currentY });
+            this.lastCursorSendTime = now;
+        }
+
         if (this.currentTool === ShapeType.Eraser) {
             const shape = this.getShapeAtPoint(currentX, currentY);
             this.highlightedShapeId = shape ? shape.id : null;
@@ -209,6 +226,8 @@ export class CanvasHandler {
 
         if (!this.isDrawing || !this.currentShape) return;
         
+        // This switch correctly uses this.currentTool to modify this.currentShape
+        // This is ONLY for the shape being actively drawn by the local user
         switch (this.currentTool) {
             case ShapeType.Rectangle:
                 this.currentShape.width = currentX - this.startX;
@@ -277,13 +296,18 @@ export class CanvasHandler {
         allShapes.forEach(shape => {
             const isHighlighted = shape.id === this.highlightedShapeId;
             this.drawShape(shape, isHighlighted);
-});
+        });
 
         if (this.currentShape && this.isDrawing) {
             this.drawShape(this.currentShape, false);
         }
+
+        this.remoteCursors.forEach(cursor => {
+            this.drawCursor(cursor);
+        });
     }
 
+    // highlight-start
     private drawShape(shape: Shape, isHighlighted: boolean): void {
         this.ctx.strokeStyle = shape.color;
         this.ctx.lineWidth = shape.strokeWidth;
@@ -296,6 +320,9 @@ export class CanvasHandler {
         }
 
         this.ctx.beginPath();
+        // THIS IS THE FIX: The switch MUST use `shape.type`, not `this.currentTool`.
+        // This ensures that remote shapes are drawn according to their own type,
+        // not the locally selected tool.
         switch (shape.type) {
             case ShapeType.Rectangle:
                 if (shape.width !== undefined && shape.height !== undefined) {
@@ -321,7 +348,9 @@ export class CanvasHandler {
                 if (shape.points && shape.points.length > 0) {
                     this.ctx.lineJoin = 'round';
                     this.ctx.lineCap = 'round';
-                    this.ctx.moveTo(shape.x, shape.y);
+                    // For pencil, the first point is stored in x/y
+                    this.ctx.moveTo(shape.x, shape.y); 
+                    // The rest of the points are in the points array
                     shape.points.forEach(point => { this.ctx.lineTo(point[0] as number, point[1] as number); });
                 }
                 break;
@@ -332,7 +361,42 @@ export class CanvasHandler {
             this.ctx.setLineDash([]);
         }
     }
+    // highlight-end
+
+    private drawCursor(cursor: RemoteCursor): void {
+        this.ctx.save();
+        this.ctx.fillStyle = '#007bff';
+        this.ctx.strokeStyle = '#ffffff';
+        this.ctx.lineWidth = 2;
+        
+        this.ctx.beginPath();
+        this.ctx.moveTo(cursor.x, cursor.y);
+        this.ctx.lineTo(cursor.x + 15, cursor.y + 5);
+        this.ctx.lineTo(cursor.x + 5, cursor.y + 15);
+        this.ctx.closePath();
+        this.ctx.fill();
+        this.ctx.stroke();
+
+        this.ctx.font = '12px Arial';
+        this.ctx.fillStyle = 'white';
+        this.ctx.strokeStyle = 'black';
+        this.ctx.lineWidth = 3;
+        const textX = cursor.x + 18;
+        const textY = cursor.y + 8;
+        this.ctx.strokeText(cursor.name, textX, textY);
+        this.ctx.fillText(cursor.name, textX, textY);
+        
+        this.ctx.restore();
+    }
     
+    public updateRemoteCursor(id: string, name: string, coords: { x: number; y: number }): void {
+        this.remoteCursors.set(id, { ...coords, name });
+    }
+
+    public removeRemoteCursor(id: string): void {
+        this.remoteCursors.delete(id);
+    }
+
     public loadShapes(initialShapes: UserShape[], currentUserID: string): void {
         this.shapes = [];
         this.remoteShapes = [];
@@ -365,7 +429,6 @@ export class CanvasHandler {
         this.shapes = localShapes;
         this.remoteShapes = remoteShapes;
         this.undoStack = [];
-        console.log(`Loaded ${localShapes.length} local shapes and ${remoteShapes.length} remote shapes from server.`);
     }
 
     public setTool(tool: ShapeType): void {
@@ -383,18 +446,10 @@ export class CanvasHandler {
     }
 
     public removeShapeById(shapeId: string): void {
-        const initialLocalLength = this.shapes.length;
-        const initialRemoteLength = this.remoteShapes.length;
         this.shapes = this.shapes.filter(shape => shape.id !== shapeId);
         this.remoteShapes = this.remoteShapes.filter(shape => shape.id !== shapeId);
-        if (this.remoteShapes.length < initialRemoteLength) {
-            console.log(`Removed remote shape ${shapeId} via server command.`);
-        } else if (this.shapes.length < initialLocalLength) {
-             console.log(`Removed local shape ${shapeId}.`);
-        }
     }
-
-    // --- Unchanged Methods (simplifiedPath, adaptiveSample, etc.) ---
+    
     private simplifyPath(points: number[][], tolerance: number): number[][] {
         if (points.length <= 2) return points;
         const getPerpendicularDistance = (point: number[], lineStart: number[], lineEnd: number[]): number => {
@@ -441,19 +496,31 @@ export class CanvasHandler {
 
     private optimizePencilPoints(points: number[][]): number[][] {
         if (points.length <= 2) return points;
-        let optimized = this.adaptiveSample(points, this.MIN_DISTANCE);
+        // The first point is now the 'x' and 'y' of the shape, so we prepend it for optimization
+        const allPoints = [[this.startX, this.startY], ...points];
+        let optimized = this.adaptiveSample(allPoints, this.MIN_DISTANCE);
         optimized = this.simplifyPath(optimized, this.SIMPLIFICATION_TOLERANCE);
-        return optimized;
+        // Return the points array without the first element, as it's stored in x/y
+        return optimized.slice(1);
     }
 
     private sendPencilInChunks(shape: Shape): void {
-        if (!shape.points || shape.points.length === 0 || !this.onPencilChunkCallback) return;
+        if (!shape.points || !this.onPencilChunkCallback) return;
         const optimizedPoints = this.optimizePencilPoints(shape.points);
         shape.points = optimizedPoints;
         const chunks: number[][][] = [];
-        for (let i = 0; i < optimizedPoints.length; i += this.CHUNK_SIZE) {
-            chunks.push(optimizedPoints.slice(i, i + this.CHUNK_SIZE));
+        // The first point is shape.x, shape.y. The rest are in the array.
+        const allPoints = [[shape.x, shape.y], ...optimizedPoints];
+
+        for (let i = 0; i < allPoints.length; i += this.CHUNK_SIZE) {
+            chunks.push(allPoints.slice(i, i + this.CHUNK_SIZE));
         }
+
+        if (chunks.length === 0) {
+            // Handle case where there's only one point (a dot)
+            chunks.push([[shape.x, shape.y]]);
+        }
+
         chunks.forEach((chunk, index) => {
             const isLastChunk = index === chunks.length - 1;
             const pencilChunk: PencilChunk = {
@@ -463,6 +530,8 @@ export class CanvasHandler {
             };
             this.onPencilChunkCallback!(pencilChunk);
         });
+
+        // Also send the final, optimized shape to be stored in the DB
         if (this.onShapeAddCallback) { this.onShapeAddCallback(shape); }
     }
 
@@ -475,11 +544,21 @@ export class CanvasHandler {
             });
         }
         const buffer = this.pencilChunkBuffer.get(id)!;
-        buffer.chunks[chunkIndex] = points;
-        buffer.receivedChunks++;
+        if(!buffer.chunks[chunkIndex]) { // Avoid processing duplicate chunks
+            buffer.chunks[chunkIndex] = points;
+            buffer.receivedChunks++;
+        }
+        
         if (buffer.receivedChunks === totalChunks) {
-            const completePoints = buffer.chunks.flat();
-            const completeShape: Shape = { ...buffer.shape, points: completePoints, isComplete: true } as Shape;
+            const allPoints = buffer.chunks.flat();
+            const firstPoint = allPoints.shift() || []; // The first point is the start
+            const completeShape: Shape = { 
+                ...buffer.shape, 
+                x: firstPoint[0],
+                y: firstPoint[1],
+                points: allPoints, 
+                isComplete: true 
+            } as Shape;
             this.addRemoteShape(completeShape);
             this.pencilChunkBuffer.delete(id);
         }
@@ -497,5 +576,6 @@ export class CanvasHandler {
         this.canvas.removeEventListener('mouseup', this.boundHandleMouseUp);
         this.canvas.removeEventListener('mouseleave', this.boundHandleMouseUp);
         this.pencilChunkBuffer.clear();
+        this.remoteCursors.clear();
     }
 }

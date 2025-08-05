@@ -80,7 +80,7 @@ export default function SigninPage() {
         throw new Error(await response.text())
       }
 
-      router.push("/create-room")
+      router.push("/room")
     } catch (err) {
       setError(err instanceof Error ? err.message : "Signin failed")
     } finally {

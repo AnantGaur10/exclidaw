@@ -53,7 +53,7 @@ export default function RoomPage() {
   // 3. Effect to fetch initial data
   useEffect(() => {
     if (!roomId) {
-      router.push('/join-room');
+      router.push('/room');
       return;
     }
     getChats(roomId)
@@ -81,7 +81,7 @@ export default function RoomPage() {
   // 5. Effect to handle connection errors
   useEffect(() => {
     if (error) {
-      router.push('/join-room');
+      router.push('/room');
     }
   }, [error, router]);
   
